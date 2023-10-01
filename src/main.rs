@@ -1,3 +1,7 @@
+#![feature(async_fn_in_trait)]
+
+mod data;
+
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use axum::{
@@ -9,6 +13,7 @@ use axum::{
     extract::{State, Query},
 };
 use std::net::SocketAddr;
+use data::MessageBroker;
 
 #[tokio::main]
 async fn main() {
@@ -46,13 +51,39 @@ impl LockedMessageQueue {
     }
 }
 
+impl MessageBroker for LockedMessageQueue {
+    async fn publish_message(&self, channel: String, message: Message) -> Result<(), ()> {
+        let mut queue = self.0.write().await;
+        queue.push(message);
+        Ok(())
+    }
+
+    async fn consume_messages(&self, channel: String, amount: usize) -> Result<Vec<Message>, ()> {
+        let messages = {
+            let queue = self.0.read().await;
+            queue.iter()
+                .filter(|message| message.channel == channel)
+                .cloned()
+                .take(amount)
+                .collect::<Vec<_>>()
+        };
+
+        self.0.write().await.retain(|message| {
+            !messages.contains(message)
+        });
+
+        Ok(messages)
+    }
+}
+
 async fn publish_message(
     State(queue_db): State<LockedMessageQueue>,
     Json(message): Json<Message>
 ) -> Result<impl IntoResponse, (http::StatusCode, &'static str)> {
-    let mut queue = queue_db.0.write().await;
-    queue.push(message);
-    Ok((http::StatusCode::OK, "message published"))
+    queue_db.publish_message(message.channel.clone(), message).await
+        .map_err(|_| (http::StatusCode::INTERNAL_SERVER_ERROR, "Failed to publish message"))?;
+
+    Ok((http::StatusCode::OK, "Message published"))
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize, Clone)]
@@ -67,19 +98,10 @@ async fn consume_message(
     Query(consume): Query<Consume>
 ) -> Result<impl IntoResponse, (http::StatusCode, Json<Vec<Message>>)> {
     let amount = consume.amount.unwrap_or(1);
+    let channel = consume.channel.clone();
 
-    let messages = {
-        let queue = queue_db.0.read().await;
-        queue.iter()
-            .filter(|message| message.channel == consume.channel)
-            .cloned()
-            .take(amount)
-            .collect::<Vec<_>>()
-    };
+    let messages = queue_db.consume_messages(channel, amount).await
+        .map_err(|_| (http::StatusCode::INTERNAL_SERVER_ERROR, Json(Vec::new())))?;
 
-    queue_db.0.write().await.retain(|message| {
-        !messages.contains(message)
-    });
-
-    Ok(Json(messages))
+    Ok((http::StatusCode::OK, Json(messages)))
 }
