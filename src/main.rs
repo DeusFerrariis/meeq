@@ -2,18 +2,16 @@
 
 mod data;
 mod model;
+mod handle;
 
 use axum::{
-    http,
     Router,
-    Json,
     routing::{get, post},
-    response::IntoResponse,
-    extract::{State, Query},
 };
 use std::net::SocketAddr;
-use data::{MessageBroker, LockedMessageQueue};
+use data::LockedMessageQueue;
 use model::Message;
+use handle::{publish_message, consume_message};
 
 #[tokio::main]
 async fn main() {
@@ -28,34 +26,4 @@ async fn main() {
         .serve(app.into_make_service())
         .await
         .unwrap();
-}
-
-async fn publish_message(
-    State(queue_db): State<LockedMessageQueue>,
-    Json(message): Json<Message>
-) -> Result<impl IntoResponse, (http::StatusCode, &'static str)> {
-    queue_db.publish_message(message.channel.clone(), message).await
-        .map_err(|_| (http::StatusCode::INTERNAL_SERVER_ERROR, "Failed to publish message"))?;
-
-    Ok((http::StatusCode::OK, "Message published"))
-}
-
-#[derive(Debug, serde::Deserialize, serde::Serialize, Clone)]
-struct Consume {
-    channel: String,
-    amount: Option<usize>,
-}
-
-// consume amount (url query) of messages from channel
-async fn consume_message(
-    State(queue_db): State<LockedMessageQueue>,
-    Query(consume): Query<Consume>
-) -> Result<impl IntoResponse, (http::StatusCode, Json<Vec<Message>>)> {
-    let amount = consume.amount.unwrap_or(1);
-    let channel = consume.channel.clone();
-
-    let messages = queue_db.consume_messages(channel, amount).await
-        .map_err(|_| (http::StatusCode::INTERNAL_SERVER_ERROR, Json(Vec::new())))?;
-
-    Ok((http::StatusCode::OK, Json(messages)))
 }
