@@ -1,9 +1,8 @@
 #![feature(async_fn_in_trait)]
 
 mod data;
+mod model;
 
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use axum::{
     http,
     Router,
@@ -13,7 +12,8 @@ use axum::{
     extract::{State, Query},
 };
 use std::net::SocketAddr;
-use data::MessageBroker;
+use data::{MessageBroker, LockedMessageQueue};
+use model::Message;
 
 #[tokio::main]
 async fn main() {
@@ -28,52 +28,6 @@ async fn main() {
         .serve(app.into_make_service())
         .await
         .unwrap();
-}
-
-#[derive(PartialEq, Debug, serde::Deserialize, serde::Serialize, Clone)]
-struct Message {
-    channel: String,
-    headers: Option<serde_json::Value>,
-    body: serde_json::Value,
-}
-
-#[derive(Debug, Clone)]
-struct LockedMessageQueue(Arc<RwLock<Vec<Message>>>);
-
-
-impl LockedMessageQueue {
-    fn new() -> Self {
-        LockedMessageQueue(
-            Arc::new(
-                RwLock::new(Vec::new())
-            )
-        )
-    }
-}
-
-impl MessageBroker for LockedMessageQueue {
-    async fn publish_message(&self, channel: String, message: Message) -> Result<(), ()> {
-        let mut queue = self.0.write().await;
-        queue.push(message);
-        Ok(())
-    }
-
-    async fn consume_messages(&self, channel: String, amount: usize) -> Result<Vec<Message>, ()> {
-        let messages = {
-            let queue = self.0.read().await;
-            queue.iter()
-                .filter(|message| message.channel == channel)
-                .cloned()
-                .take(amount)
-                .collect::<Vec<_>>()
-        };
-
-        self.0.write().await.retain(|message| {
-            !messages.contains(message)
-        });
-
-        Ok(messages)
-    }
 }
 
 async fn publish_message(
