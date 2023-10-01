@@ -21,7 +21,7 @@
           buildInputs = [
             openssl
             pkg-config
-            exa
+            eza
             fd
             rust-bin.nightly.latest.default
           ];
