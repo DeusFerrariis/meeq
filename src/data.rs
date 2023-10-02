@@ -1,11 +1,15 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::Message;
+use axum::async_trait;
 
+#[async_trait]
 pub trait MessageBroker {
     async fn publish_message(&self, channel: String, message: Message) -> Result<(), ()>;
     async fn consume_messages(&self, channel: String, amount: usize) -> Result<Vec<Message>, ()>;
 }
+
+pub type DynMessageBroker = Arc<dyn MessageBroker + Send + Sync>;
 
 #[derive(Debug, Clone)]
 pub struct LockedMessageQueue(Arc<RwLock<Vec<Message>>>);
@@ -20,8 +24,9 @@ impl LockedMessageQueue {
     }
 }
 
+#[async_trait]
 impl MessageBroker for LockedMessageQueue {
-    async fn publish_message(&self, channel: String, message: Message) -> Result<(), ()> {
+    async fn publish_message(&self, _channel: String, message: Message) -> Result<(), ()> {
         let mut queue = self.0.write().await;
         queue.push(message);
         Ok(())
