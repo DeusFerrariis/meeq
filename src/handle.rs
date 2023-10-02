@@ -2,11 +2,11 @@ use axum::{
     http,
     Json,
     response::IntoResponse,
-    extract::{State, Query, Extension},
+    extract::{State, Query},
 };
 
 use crate::model::{Message};
-use crate::data::{DynMessageBroker, LockedMessageQueue};
+use crate::data::DynMessageBroker;
 use crate::request::ConsumeQuery;
 
 #[axum::debug_handler]

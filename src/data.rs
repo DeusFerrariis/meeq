@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::Message;
+// NOTE: use this until support for trait objects is stabilized for async traits
 use axum::async_trait;
 
 #[async_trait]
